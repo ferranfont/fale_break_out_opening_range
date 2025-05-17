@@ -10,16 +10,16 @@ def order_managment(
     first_breakout_price: float,
     first_breakdown_time: pd.Timestamp,
     first_breakdown_price: float,
-    target_profit=3,
-    stop_lost=4,
+    target_profit=25,
+    stop_lost=10,
     discount_short=-0.20,
     discount_long=0.20,
-    tolerancia=1
+    margen=3
 ) -> pd.DataFrame:
 
     target_profit = float(target_profit)
     stop_lost = float(stop_lost)
-    tolerancia = float(tolerancia)
+    margen = float(margen)
 
     cols = ['Open', 'High', 'Low', 'Close']
     df_subset.loc[:, cols] = df_subset[cols].apply(pd.to_numeric, errors='coerce')
@@ -27,49 +27,48 @@ def order_managment(
     df = df_subset[df_subset.index > END_TIME].copy()
 
     df['Signal'] = df['Close'].apply(
-        lambda x: 'Short' if x > y1_value else ('Long' if x < y0_value else None)
+        lambda x: 'Long' if x > y1_value else ('Short' if x < y0_value else None)
     )
     signals = df[df['Signal'].notna()]
 
     entradas_finales = []
-    pos = 0  # solo una entrada por día
+    pos = 0
 
     for signal_idx, signal_row in signals.iterrows():
         signal_type = signal_row['Signal']
-        start_loc = df_subset.index.get_loc(signal_idx)
-        rolling_df = df_subset.iloc[start_loc:].copy()
+        close_price = signal_row['Close']
 
-        if signal_type == 'Short':
-            base_val = rolling_df.iloc[0]['High']
-            comp_col = 'High'
-        elif signal_type == 'Long':
-            base_val = rolling_df.iloc[0]['Low']
-            comp_col = 'Low'
+        if signal_type == 'Long':
+            trigger_level = close_price + margen
+        elif signal_type == 'Short':
+            trigger_level = close_price - margen
         else:
             continue
 
-        for i in range(1, len(rolling_df)):
-            current_val = rolling_df.iloc[i][comp_col]
-            current_time = rolling_df.index[i]
+        after_signal = df_subset[df_subset.index > signal_idx]
 
-            if abs(current_val - base_val) <= tolerancia:
-                entry_price = rolling_df.iloc[i]['Close']
-                entry_time = current_time
-                entradas_finales.append((entry_time, signal_type, entry_price, signal_idx))
+        for idx, row in after_signal.iterrows():
+            if signal_type == 'Long' and row['High'] >= trigger_level:
+                entry_price = trigger_level
+                entry_time = idx
+                entradas_finales.append((entry_time, signal_type, entry_price, signal_idx, trigger_level))
                 pos += 1
                 break
-            else:
-                base_val = current_val
+            elif signal_type == 'Short' and row['Low'] <= trigger_level:
+                entry_price = trigger_level
+                entry_time = idx
+                entradas_finales.append((entry_time, signal_type, entry_price, signal_idx, trigger_level))
+                pos += 1
+                break
 
         if pos >= 1:
             break
 
     results = []
 
-    for entry_time, entry_type, entry_price, signal_time in entradas_finales:
+    for entry_time, entry_type, entry_price, signal_time, trigger_level in entradas_finales:
         tp = entry_price + target_profit if entry_type == 'Long' else entry_price - target_profit
         sl = entry_price - stop_lost if entry_type == 'Long' else entry_price + stop_lost
-        be_active = False  # flag de trailing stop a BE
 
         after_entry = df_subset[df_subset.index > entry_time]
         max_fav = 0
@@ -82,26 +81,19 @@ def order_managment(
             high = bar['High']
             low = bar['Low']
 
-            # Activar trailing stop a BE si va +5 puntos a favor
             if entry_type == 'Long':
-                if high - entry_price >= 6:
-                    sl = entry_price
-                    be_active = True
                 if high >= tp:
                     exit_time, exit_price, outcome = idx, tp, 'TP'
                     break
                 elif low <= sl:
-                    exit_time, exit_price, outcome = idx, sl, 'BE' if be_active and sl == entry_price else 'SL'
+                    exit_time, exit_price, outcome = idx, sl, 'SL'
                     break
             elif entry_type == 'Short':
-                if entry_price - low >= 5:
-                    sl = entry_price
-                    be_active = True
                 if low <= tp:
                     exit_time, exit_price, outcome = idx, tp, 'TP'
                     break
                 elif high >= sl:
-                    exit_time, exit_price, outcome = idx, sl, 'BE' if be_active and sl == entry_price else 'SL'
+                    exit_time, exit_price, outcome = idx, sl, 'SL'
                     break
 
             max_fav = max(max_fav, high - entry_price if entry_type == 'Long' else entry_price - low)
@@ -141,6 +133,7 @@ def order_managment(
             'Entry_Time': entry_time,
             'Entry': entry_type,
             'Entry_Price': entry_price,
+            'Trigger_Level': trigger_level,
             'TP': tp,
             'SL': sl,
             'Exit_Time': exit_time,

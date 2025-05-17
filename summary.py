@@ -7,7 +7,7 @@ summary_file_path = os.path.join('outputs', 'summary_orders.csv')
 
 if os.path.exists(summary_file_path):
     summary = pd.read_csv(summary_file_path)
-    print("✅ Summary file loaded.")
+    print("\n✅ Summary file loaded.")
 else:
     raise FileNotFoundError(f"⚠️ Summary file not found at: {summary_file_path}")
 
