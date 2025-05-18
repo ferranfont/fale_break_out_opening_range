@@ -1,4 +1,5 @@
 # ANDREA UNGER TRADING SYSTEM BREAK OUT OPENING RANGE
+
 from dotenv import load_dotenv
 import pandas as pd
 from datetime import datetime
@@ -53,7 +54,7 @@ for fecha in dates:
     directorio = '../DATA'
     nombre_fichero = 'export_es_2015_formatted.csv'
     ruta_completa = os.path.join(directorio, nombre_fichero)
-    print("\n======================== 🔍 df  ==========================")
+    print("\n======================== 🔍 df  ===========================")
     df = pd.read_csv(ruta_completa)
     print('Fichero:', ruta_completa, 'importado')
     print(f"Características del Fichero Base: {df.shape}")
